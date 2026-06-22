@@ -44,7 +44,7 @@ function LoadingState() {
       <div className="text-center">
         <p className="text-lg font-medium">뉴스를 수집하고 있습니다</p>
         <p className="text-[var(--muted)] mt-1 text-sm">
-          Google 뉴스에서 최근 7일 이내 기사를 검색 중...
+          Google 뉴스에서 기사를 수집하고 Gemini AI로 분석 중...
         </p>
       </div>
     </div>
@@ -212,7 +212,7 @@ export default function Home() {
         <header className="text-center mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-[var(--card-border)] text-xs text-[var(--muted)] mb-4">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
-            Google 뉴스 · 최근 7일
+            Google 뉴스 · Gemini AI · 최근 7일
           </div>
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-3">
             AI 뉴스 리포트

@@ -8,7 +8,7 @@
 - 종합 요약, 주요 이슈, 타임라인 생성
 - 수집된 기사 목록 및 개별 요약
 - 리포트 생성 시 **이메일 자동 발송** (kimddll@naver.com)
-- OpenAI API 연동 시 AI 기반 심층 분석 (선택)
+- **Google Gemini AI** 기반 고품질 뉴스 분석 (권장)
 
 ## 시작하기
 
@@ -28,15 +28,26 @@ cp .env.example .env.local
 
 | 변수 | 필수 | 설명 |
 |------|------|------|
-| `OPENAI_API_KEY` | 선택 | AI 요약 기능 (없으면 기본 요약 사용) |
+| `GEMINI_API_KEY` | **권장** | Google Gemini AI 분석 ([발급](https://aistudio.google.com/apikey)) |
+| `GEMINI_MODEL` | 선택 | Gemini 모델 (기본: gemini-2.0-flash) |
+| `OPENAI_API_KEY` | 선택 | Gemini 미설정 시 대체 AI |
 | `GOOGLE_API_KEY` | 선택 | Google Custom Search API |
 | `GOOGLE_CSE_ID` | 선택 | Programmable Search Engine ID |
 | `SMTP_USER` | **이메일 발송 시 필수** | 네이버 메일 계정 |
 | `SMTP_PASS` | **이메일 발송 시 필수** | 네이버 앱 비밀번호 |
 | `REPORT_RECIPIENT_EMAIL` | 선택 | 수신 이메일 (기본: kimddll@naver.com) |
 
-> API 키 없이도 Google News RSS를 통해 기본 뉴스 검색 및 요약이 동작합니다.
-> 이메일 발송을 위해 네이버 SMTP 설정이 필요합니다.
+> Gemini API 키 없이도 기본 요약이 동작하지만, API 키 설정 시 훨씬 고품질 리포트가 생성됩니다.
+
+### Gemini API 설정 (권장)
+
+1. [Google AI Studio](https://aistudio.google.com/apikey)에서 API 키 발급
+2. `.env.local`에 추가:
+
+```env
+GEMINI_API_KEY=발급받은_API_키
+GEMINI_MODEL=gemini-2.0-flash
+```
 
 ### 3. 개발 서버 실행
 
@@ -72,8 +83,8 @@ REPORT_RECIPIENT_EMAIL=kimddll@naver.com
 - **TypeScript**
 - **Tailwind CSS**
 - **Google News RSS** — 뉴스 수집
+- **Google Gemini AI** — 고품질 뉴스 분석
 - **Nodemailer** — 이메일 발송
-- **OpenAI GPT-4o-mini** — AI 요약 (선택)
 
 ## Google Custom Search 설정 (선택)
 

@@ -1,5 +1,6 @@
-import OpenAI from "openai";
 import type { NewsArticle } from "./news";
+import { generateWithGemini, generateWithOpenAI } from "./ai-report";
+import type { AiReportPayload } from "./ai-report";
 
 export interface KeyIssue {
   title: string;
@@ -188,58 +189,11 @@ function buildFallbackReport(keyword: string, articles: NewsArticle[]): NewsRepo
   };
 }
 
-async function buildAiReport(keyword: string, articles: NewsArticle[]): Promise<NewsReport> {
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-  const articleText = articles
-    .map(
-      (a, i) =>
-        `[${i + 1}] ${a.title}\n출처: ${a.source} | 날짜: ${formatDate(a.publishedAt)}\n${a.snippet}`
-    )
-    .join("\n\n");
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.3,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `당신은 뉴스 분석 전문가입니다. 주어진 뉴스 기사들을 분석하여 한국어 JSON 리포트를 작성하세요.
-반드시 다음 JSON 형식으로만 응답하세요:
-{
-  "keyIssues": [
-    {"title": "이슈 제목(간결)", "detail": "이슈 상세 설명 2-3문장", "source": "주요 출처"}
-  ],
-  "overview": "keyIssues를 종합한 3-4문장 요약",
-  "timeline": [
-    {"date": "날짜", "summary": "해당일 흐름 2-3문장 상세 요약", "highlights": ["기사 제목1", "기사 제목2"]}
-  ],
-  "articleSummaries": [{"index": 0, "summary": "기사 한 줄 요약"}, ...]
-}
-
-작성 규칙:
-- keyIssues는 3~5개, 각 detail은 배경·핵심 내용·영향을 포함해 2~3문장으로 작성
-- timeline은 날짜별로 2~3문장 상세 요약, highlights에 해당일 주요 기사 제목 2~4개 포함
-- 기사 건수나 출처 나열만 하는 것은 금지`,
-      },
-      {
-        role: "user",
-        content: `키워드: "${keyword}"\n\n수집된 뉴스 (${articles.length}건):\n\n${articleText}`,
-      },
-    ],
-  });
-
-  const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error("AI 응답 없음");
-
-  const parsed = JSON.parse(content) as {
-    overview: string;
-    keyIssues: KeyIssue[];
-    timeline: TimelineEntry[];
-    articleSummaries: { index: number; summary: string }[];
-  };
-
+function buildReportFromAi(
+  keyword: string,
+  articles: NewsArticle[],
+  parsed: AiReportPayload
+): NewsReport {
   const summaryMap = new Map(
     parsed.articleSummaries.map((s) => [s.index, s.summary])
   );
@@ -270,11 +224,21 @@ export async function generateReport(
     return buildFallbackReport(keyword, articles);
   }
 
-  if (process.env.OPENAI_API_KEY) {
+  if (process.env.GEMINI_API_KEY?.trim()) {
     try {
-      return await buildAiReport(keyword, articles);
-    } catch {
-      return buildFallbackReport(keyword, articles);
+      const parsed = await generateWithGemini(keyword, articles);
+      return buildReportFromAi(keyword, articles, parsed);
+    } catch (error) {
+      console.error("Gemini report failed:", error);
+    }
+  }
+
+  if (process.env.OPENAI_API_KEY?.trim()) {
+    try {
+      const parsed = await generateWithOpenAI(keyword, articles);
+      return buildReportFromAi(keyword, articles, parsed);
+    } catch (error) {
+      console.error("OpenAI report failed:", error);
     }
   }
 
