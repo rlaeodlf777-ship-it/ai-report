@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 
@@ -17,8 +17,6 @@ interface Report {
     link: string;
     summary: string;
   }[];
-  emailSent?: boolean;
-  emailError?: string;
 }
 
 function formatDate(dateStr: string) {
@@ -44,9 +42,7 @@ function LoadingState() {
       <div className="text-center">
         <p className="text-lg font-medium">뉴스를 수집하고 있습니다</p>
         <p className="text-[var(--muted)] mt-1 text-sm">
-          Google 뉴스에서 최근 7일 이내 기사를 검색하고
-          <br />
-          리포트를 이메일로 발송 중...
+          Google 뉴스에서 최근 7일 이내 기사를 검색 중...
         </p>
       </div>
     </div>
@@ -239,19 +235,6 @@ export default function Home() {
 
         {report && !loading && (
           <>
-            {report.emailSent && (
-              <div className="mb-6 p-4 rounded-xl border border-[var(--success)]/30 bg-[var(--success)]/10 text-[var(--success)] text-sm animate-fade-in">
-                리포트가 kimddll@naver.com 으로 이메일 발송되었습니다.
-              </div>
-            )}
-            {report.emailSent === false && report.articleCount > 0 && (
-              <div className="mb-6 p-4 rounded-xl border border-yellow-500/30 bg-yellow-500/10 text-yellow-400 text-sm animate-fade-in">
-                이메일 발송에 실패했습니다. SMTP 설정을 확인해 주세요.
-                {report.emailError && (
-                  <span className="block mt-1 text-xs opacity-80">{report.emailError}</span>
-                )}
-              </div>
-            )}
             {report.articleCount === 0 ? (
               <div className="text-center py-16 animate-fade-in">
                 <p className="text-lg font-medium mb-2">검색 결과가 없습니다</p>
