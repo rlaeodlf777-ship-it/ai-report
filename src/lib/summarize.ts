@@ -1,14 +1,26 @@
 import OpenAI from "openai";
 import type { NewsArticle } from "./news";
 
+export interface KeyIssue {
+  title: string;
+  detail: string;
+  source: string;
+}
+
+export interface TimelineEntry {
+  date: string;
+  summary: string;
+  highlights: string[];
+}
+
 export interface NewsReport {
   keyword: string;
   generatedAt: string;
   period: string;
   articleCount: number;
   overview: string;
-  keyIssues: string[];
-  timeline: { date: string; summary: string }[];
+  keyIssues: KeyIssue[];
+  timeline: TimelineEntry[];
   articles: {
     title: string;
     source: string;
@@ -38,85 +50,68 @@ function truncate(text: string, maxLength: number): string {
   return `${normalized.slice(0, maxLength - 3).trim()}...`;
 }
 
-function extractKeyIssues(articles: NewsArticle[]): string[] {
+function isDistinctSnippet(title: string, snippet: string): boolean {
+  if (snippet.length < 30) return false;
+  const normalizedIssue = title.replace(/\s+/g, "").toLowerCase();
+  const normalizedSnippet = snippet.replace(/\s+/g, "").toLowerCase();
+  return !normalizedSnippet.startsWith(
+    normalizedIssue.slice(0, Math.min(20, normalizedIssue.length))
+  );
+}
+
+function buildIssueDetail(article: NewsArticle, title: string): string {
+  const snippet = article.snippet?.replace(/\s+/g, " ").trim() ?? "";
+
+  if (isDistinctSnippet(title, snippet)) {
+    return truncate(snippet, 180);
+  }
+
+  return `${article.source} 등에서 '${title}' 관련 보도가 나왔으며, 해당 이슈가 최근 한 주간 ${title.split(/[,·…]/)[0]?.trim() || "관련 분야"}에서 지속적으로 주목받고 있습니다.`;
+}
+
+function buildDetailedKeyIssues(articles: NewsArticle[]): KeyIssue[] {
   const seen = new Set<string>();
-  const issues: string[] = [];
+  const issues: KeyIssue[] = [];
 
   for (const article of articles) {
-    const clean = cleanTitle(article.title);
-    const key = clean.toLowerCase();
-    if (!clean || seen.has(key)) continue;
+    const title = cleanTitle(article.title);
+    const key = title.toLowerCase();
+    if (!title || seen.has(key)) continue;
     seen.add(key);
-    issues.push(clean);
+
+    issues.push({
+      title,
+      detail: buildIssueDetail(article, title),
+      source: article.source,
+    });
     if (issues.length >= 5) break;
   }
 
   return issues;
 }
 
-function findArticleForIssue(articles: NewsArticle[], issue: string, index: number) {
-  return articles.find((a) => cleanTitle(a.title) === issue) ?? articles[index];
-}
+function buildTimelineSummary(items: NewsArticle[]): string {
+  const titles = items.map((i) => cleanTitle(i.title));
+  const snippets = items
+    .map((i) => i.snippet?.replace(/\s+/g, " ").trim() ?? "")
+    .filter((s) => s.length >= 30);
 
-function isDistinctSnippet(issue: string, snippet: string): boolean {
-  if (snippet.length < 30) return false;
-  const normalizedIssue = issue.replace(/\s+/g, "").toLowerCase();
-  const normalizedSnippet = snippet.replace(/\s+/g, "").toLowerCase();
-  return !normalizedSnippet.startsWith(normalizedIssue.slice(0, Math.min(20, normalizedIssue.length)));
-}
-
-function buildOverviewFromKeyIssues(
-  keyword: string,
-  articles: NewsArticle[],
-  keyIssues: string[]
-): string {
-  if (keyIssues.length === 0) {
-    return `"${keyword}" 관련 최근 7일 이내 뉴스를 찾지 못했습니다.`;
+  if (snippets.length > 0 && isDistinctSnippet(titles[0]!, snippets[0]!)) {
+    const lead = truncate(snippets[0]!, 140);
+    if (items.length === 1) return lead;
+    return `${items.length}건의 관련 기사가 보도되었습니다. ${lead}`;
   }
 
-  const issueDetails = keyIssues.map((issue, index) => {
-    const article = findArticleForIssue(articles, issue, index);
-    const snippet = article?.snippet?.replace(/\s+/g, " ").trim() ?? "";
-    return { issue, snippet };
-  });
+  if (items.length === 1) {
+    return `'${truncate(titles[0]!, 60)}' 기사가 ${items[0]!.source} 등을 통해 보도되었습니다.`;
+  }
 
-  const intro = `최근 7일간 "${keyword}" 관련 뉴스 ${articles.length}건을 분석한 결과, ${keyIssues.length}가지 주요 이슈가 확인되었습니다.`;
-
-  const topIssues = issueDetails.slice(0, 3);
-  const issueDescriptions = topIssues.map(({ issue, snippet }) => {
-    if (isDistinctSnippet(issue, snippet)) {
-      return `${issue}은(는) ${truncate(snippet, 80)}`;
-    }
-    return issue;
-  });
-
-  const mainBody =
-    issueDescriptions.length === 1
-      ? `가장 두드러진 이슈는 '${issueDescriptions[0]}'입니다.`
-      : `우선 ${issueDescriptions
-          .map((desc, i) => `${i + 1}) ${desc.includes("은(는)") ? desc : `'${desc}'`}`)
-          .join(", ")} 등이 핵심 이슈로 분류됩니다.`;
-
-  const remainingCount = keyIssues.length - topIssues.length;
-  const extraNote =
-    remainingCount > 0
-      ? ` 추가로 ${issueDetails
-          .slice(3)
-          .map(({ issue }) => `'${issue}'`)
-          .join(", ")} 등 ${remainingCount}건의 관련 동향도 함께 보도되었습니다.`
-      : "";
-
-  const themes = topIssues.map(({ issue }) => issue.split(/[,·…]/)[0]?.trim() || issue);
-  const conclusion = `이들 이슈를 종합하면, "${keyword}" 분야는 ${themes.join(", ")} 등 여러 영역에서 활발한 움직임이 이어지고 있습니다.`;
-
-  return `${intro} ${mainBody}${extraNote} ${conclusion}`;
+  return `총 ${items.length}건의 관련 기사가 보도되었습니다. '${truncate(titles[0]!, 45)}'를 시작으로 ${titles.slice(1, 3).map((t) => `'${truncate(t, 35)}'`).join(", ")}${items.length > 3 ? ` 등 ${items.length}건` : ""}의 이슈가 집중 보도되었습니다.`;
 }
 
-function buildFallbackReport(keyword: string, articles: NewsArticle[]): NewsReport {
-  const keyIssues = extractKeyIssues(articles);
-  const overview = buildOverviewFromKeyIssues(keyword, articles, keyIssues);
-
+function buildDetailedTimeline(articles: NewsArticle[]): TimelineEntry[] {
   const dateGroups = new Map<string, NewsArticle[]>();
+
   for (const article of articles) {
     const dateKey = formatDate(article.publishedAt);
     const group = dateGroups.get(dateKey) ?? [];
@@ -124,12 +119,56 @@ function buildFallbackReport(keyword: string, articles: NewsArticle[]): NewsRepo
     dateGroups.set(dateKey, group);
   }
 
-  const timeline = Array.from(dateGroups.entries())
+  return Array.from(dateGroups.entries())
     .slice(0, 7)
     .map(([date, items]) => ({
       date,
-      summary: items.map((i) => cleanTitle(i.title)).join(" · "),
+      summary: buildTimelineSummary(items),
+      highlights: items.slice(0, 4).map((i) => cleanTitle(i.title)),
     }));
+}
+
+function buildOverviewFromKeyIssues(
+  keyword: string,
+  articles: NewsArticle[],
+  keyIssues: KeyIssue[]
+): string {
+  if (keyIssues.length === 0) {
+    return `"${keyword}" 관련 최근 7일 이내 뉴스를 찾지 못했습니다.`;
+  }
+
+  const intro = `최근 7일간 "${keyword}" 관련 뉴스 ${articles.length}건을 분석한 결과, ${keyIssues.length}가지 주요 이슈가 확인되었습니다.`;
+
+  const topIssues = keyIssues.slice(0, 3);
+  const mainBody =
+    topIssues.length === 1
+      ? `핵심 이슈는 '${topIssues[0]!.title}'로, ${truncate(topIssues[0]!.detail, 100)}`
+      : `우선 ${topIssues
+          .map(
+            (issue, i) =>
+              `${i + 1}) ${issue.title}(${truncate(issue.detail, 70)})`
+          )
+          .join(", ")} 등이 핵심 이슈로 분류됩니다.`;
+
+  const remainingCount = keyIssues.length - topIssues.length;
+  const extraNote =
+    remainingCount > 0
+      ? ` 추가로 ${keyIssues
+          .slice(3)
+          .map((issue) => `'${issue.title}'`)
+          .join(", ")} 등 ${remainingCount}건의 관련 동향도 함께 보도되었습니다.`
+      : "";
+
+  const themes = topIssues.map((issue) => issue.title.split(/[,·…]/)[0]?.trim() || issue.title);
+  const conclusion = `이들 이슈를 종합하면, "${keyword}" 분야는 ${themes.join(", ")} 등 여러 영역에서 활발한 움직임이 이어지고 있습니다.`;
+
+  return `${intro} ${mainBody}${extraNote} ${conclusion}`;
+}
+
+function buildFallbackReport(keyword: string, articles: NewsArticle[]): NewsReport {
+  const keyIssues = buildDetailedKeyIssues(articles);
+  const overview = buildOverviewFromKeyIssues(keyword, articles, keyIssues);
+  const timeline = buildDetailedTimeline(articles);
 
   return {
     keyword,
@@ -169,11 +208,20 @@ async function buildAiReport(keyword: string, articles: NewsArticle[]): Promise<
         content: `당신은 뉴스 분석 전문가입니다. 주어진 뉴스 기사들을 분석하여 한국어 JSON 리포트를 작성하세요.
 반드시 다음 JSON 형식으로만 응답하세요:
 {
-  "keyIssues": ["주요 이슈 1", "주요 이슈 2", ...],
-  "overview": "keyIssues에 정리한 주요 이슈들을 종합한 3-4문장 요약. 기사 건수나 출처 나열 없이, 이슈 간 연관성과 전체 흐름을 분석해 서술",
-  "timeline": [{"date": "날짜", "summary": "해당일 주요 뉴스 요약"}],
+  "keyIssues": [
+    {"title": "이슈 제목(간결)", "detail": "이슈 상세 설명 2-3문장", "source": "주요 출처"}
+  ],
+  "overview": "keyIssues를 종합한 3-4문장 요약",
+  "timeline": [
+    {"date": "날짜", "summary": "해당일 흐름 2-3문장 상세 요약", "highlights": ["기사 제목1", "기사 제목2"]}
+  ],
   "articleSummaries": [{"index": 0, "summary": "기사 한 줄 요약"}, ...]
-}`,
+}
+
+작성 규칙:
+- keyIssues는 3~5개, 각 detail은 배경·핵심 내용·영향을 포함해 2~3문장으로 작성
+- timeline은 날짜별로 2~3문장 상세 요약, highlights에 해당일 주요 기사 제목 2~4개 포함
+- 기사 건수나 출처 나열만 하는 것은 금지`,
       },
       {
         role: "user",
@@ -187,8 +235,8 @@ async function buildAiReport(keyword: string, articles: NewsArticle[]): Promise<
 
   const parsed = JSON.parse(content) as {
     overview: string;
-    keyIssues: string[];
-    timeline: { date: string; summary: string }[];
+    keyIssues: KeyIssue[];
+    timeline: TimelineEntry[];
     articleSummaries: { index: number; summary: string }[];
   };
 

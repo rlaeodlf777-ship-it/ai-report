@@ -8,8 +8,8 @@ interface Report {
   period: string;
   articleCount: number;
   overview: string;
-  keyIssues: string[];
-  timeline: { date: string; summary: string }[];
+  keyIssues: { title: string; detail: string; source: string }[];
+  timeline: { date: string; summary: string; highlights: string[] }[];
   articles: {
     title: string;
     source: string;
@@ -71,13 +71,19 @@ function ReportView({ report }: { report: Report }) {
       {report.keyIssues.length > 0 && (
         <div className="rounded-2xl border border-[var(--card-border)] bg-[var(--card)] p-6 md:p-8">
           <h2 className="text-xl font-bold mb-4">주요 이슈</h2>
-          <ul className="space-y-3">
+          <ul className="space-y-5">
             {report.keyIssues.map((issue, i) => (
               <li key={i} className="flex gap-3">
                 <span className="flex-shrink-0 w-7 h-7 rounded-lg bg-[var(--accent)]/15 text-[var(--accent)] flex items-center justify-center text-sm font-bold">
                   {i + 1}
                 </span>
-                <span className="pt-0.5 leading-relaxed">{issue}</span>
+                <div className="pt-0.5">
+                  <p className="font-semibold leading-relaxed">{issue.title}</p>
+                  <p className="text-xs text-[var(--muted)] mt-1">{issue.source}</p>
+                  <p className="text-sm text-[var(--foreground)]/80 leading-relaxed mt-2">
+                    {issue.detail}
+                  </p>
+                </div>
               </li>
             ))}
           </ul>
@@ -96,13 +102,25 @@ function ReportView({ report }: { report: Report }) {
                     <div className="w-px flex-1 bg-[var(--card-border)] mt-1" />
                   )}
                 </div>
-                <div className="pb-4">
+                <div className="pb-4 flex-1">
                   <p className="text-sm text-[var(--accent)] font-medium mb-1">
                     {item.date}
                   </p>
-                  <p className="text-[var(--foreground)]/85 leading-relaxed">
+                  <p className="text-[var(--foreground)]/85 leading-relaxed mb-2">
                     {item.summary}
                   </p>
+                  {item.highlights?.length > 0 && (
+                    <ul className="space-y-1">
+                      {item.highlights.map((highlight, j) => (
+                        <li
+                          key={j}
+                          className="text-xs text-[var(--muted)] pl-3 border-l-2 border-[var(--card-border)]"
+                        >
+                          {highlight}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             ))}

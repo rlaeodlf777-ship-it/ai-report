@@ -26,7 +26,11 @@ function buildReportHtml(report: NewsReport): string {
   const keyIssuesHtml = report.keyIssues
     .map(
       (issue, i) =>
-        `<li style="margin-bottom:8px;"><strong>${i + 1}.</strong> ${escapeHtml(issue)}</li>`
+        `<li style="margin-bottom:16px;">
+          <strong>${i + 1}. ${escapeHtml(issue.title)}</strong>
+          <span style="color:#8899a6;font-size:12px;"> · ${escapeHtml(issue.source)}</span>
+          <p style="margin:6px 0 0;font-size:14px;color:#444;line-height:1.6;">${escapeHtml(issue.detail)}</p>
+        </li>`
     )
     .join("");
 
@@ -34,8 +38,11 @@ function buildReportHtml(report: NewsReport): string {
     .map(
       (item) =>
         `<tr>
-          <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#1d9bf0;font-weight:600;white-space:nowrap;">${escapeHtml(item.date)}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(item.summary)}</td>
+          <td style="padding:12px;border-bottom:1px solid #eee;color:#1d9bf0;font-weight:600;white-space:nowrap;vertical-align:top;">${escapeHtml(item.date)}</td>
+          <td style="padding:12px;border-bottom:1px solid #eee;vertical-align:top;">
+            <p style="margin:0 0 8px;line-height:1.6;">${escapeHtml(item.summary)}</p>
+            ${item.highlights?.length ? `<ul style="margin:0;padding-left:18px;font-size:13px;color:#666;">${item.highlights.map((h) => `<li>${escapeHtml(h)}</li>`).join("")}</ul>` : ""}
+          </td>
         </tr>`
     )
     .join("");
