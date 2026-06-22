@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sendReportEmail } from "@/lib/email";
 import { fetchNews } from "@/lib/news";
 import { generateReport } from "@/lib/summarize";
 
@@ -24,7 +25,13 @@ export async function POST(request: NextRequest) {
     const articles = await fetchNews(keyword);
     const report = await generateReport(keyword, articles);
 
-    return NextResponse.json(report);
+    const emailResult = await sendReportEmail(report);
+
+    return NextResponse.json({
+      ...report,
+      emailSent: emailResult.sent,
+      emailError: emailResult.error,
+    });
   } catch (error) {
     console.error("Report generation failed:", error);
     return NextResponse.json(
