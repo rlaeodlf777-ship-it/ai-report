@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import type { Transporter } from "nodemailer";
 import type { NewsReport } from "./summarize";
 
 const DEFAULT_RECIPIENT = "kimddll@naver.com";
@@ -82,38 +83,113 @@ function buildReportHtml(report: NewsReport): string {
 </html>`;
 }
 
+function buildMailOptions(report: NewsReport, recipient: string, from: string) {
+  return {
+    from: `"AI 뉴스 리포트" <${from}>`,
+    to: recipient,
+    subject: `[AI 뉴스 리포트] "${report.keyword}" 최근 7일 이슈 요약`,
+    html: buildReportHtml(report),
+  };
+}
+
+async function sendViaSmtp(
+  report: NewsReport,
+  recipient: string
+): Promise<{ sent: boolean; error?: string }> {
+  const smtpUser = process.env.SMTP_USER?.trim();
+  const smtpPass = process.env.SMTP_PASS?.trim();
+
+  if (!smtpUser || !smtpPass) {
+    return {
+      sent: false,
+      error:
+        "SMTP 비밀번호가 설정되지 않았습니다. .env.local 파일의 SMTP_PASS에 네이버 앱 비밀번호를 입력하세요.",
+    };
+  }
+
+  const from = process.env.SMTP_FROM?.trim() ?? smtpUser;
+  const mailOptions = buildMailOptions(report, recipient, from);
+
+  const configs = [
+    {
+      host: process.env.SMTP_HOST ?? "smtp.naver.com",
+      port: Number(process.env.SMTP_PORT ?? 465),
+      secure: process.env.SMTP_SECURE !== "false",
+    },
+    { host: "smtp.naver.com", port: 587, secure: false },
+  ];
+
+  let lastError = "메일 발송 실패";
+
+  for (const config of configs) {
+    const transporter: Transporter = nodemailer.createTransport({
+      ...config,
+      auth: { user: smtpUser, pass: smtpPass },
+      connectionTimeout: 10000,
+      tls: { minVersion: "TLSv1.2" },
+    });
+
+    try {
+      await transporter.verify();
+      await transporter.sendMail(mailOptions);
+      return { sent: true };
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : "메일 발송 실패";
+      console.error(`SMTP failed (${config.port}):`, err);
+    }
+  }
+
+  return { sent: false, error: lastError };
+}
+
+async function sendViaResend(
+  report: NewsReport,
+  recipient: string
+): Promise<{ sent: boolean; error?: string }> {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey) return { sent: false, error: "Resend API 키 없음" };
+
+  const from = process.env.RESEND_FROM ?? "AI 뉴스 리포트 <onboarding@resend.dev>";
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [recipient],
+        subject: `[AI 뉴스 리포트] "${report.keyword}" 최근 7일 이슈 요약`,
+        html: buildReportHtml(report),
+      }),
+    });
+
+    const data = (await response.json()) as { id?: string; message?: string };
+
+    if (!response.ok) {
+      return { sent: false, error: data.message ?? "Resend 발송 실패" };
+    }
+
+    return { sent: true };
+  } catch (err) {
+    return {
+      sent: false,
+      error: err instanceof Error ? err.message : "Resend 발송 실패",
+    };
+  }
+}
+
 export async function sendReportEmail(
   report: NewsReport
 ): Promise<{ sent: boolean; error?: string }> {
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
+  const recipient = process.env.REPORT_RECIPIENT_EMAIL?.trim() ?? DEFAULT_RECIPIENT;
 
-  if (!smtpUser || !smtpPass) {
-    return { sent: false, error: "SMTP 설정이 필요합니다." };
+  if (process.env.RESEND_API_KEY?.trim()) {
+    const resendResult = await sendViaResend(report, recipient);
+    if (resendResult.sent) return resendResult;
   }
 
-  const recipient = process.env.REPORT_RECIPIENT_EMAIL ?? DEFAULT_RECIPIENT;
-
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? "smtp.naver.com",
-    port: Number(process.env.SMTP_PORT ?? 465),
-    secure: process.env.SMTP_SECURE !== "false",
-    auth: { user: smtpUser, pass: smtpPass },
-  });
-
-  try {
-    await transporter.sendMail({
-      from: `"AI 뉴스 리포트" <${process.env.SMTP_FROM ?? smtpUser}>`,
-      to: recipient,
-      subject: `[AI 뉴스 리포트] "${report.keyword}" 최근 7일 이슈 요약`,
-      html: buildReportHtml(report),
-    });
-    return { sent: true };
-  } catch (err) {
-    console.error("Email send failed:", err);
-    return {
-      sent: false,
-      error: err instanceof Error ? err.message : "메일 발송 실패",
-    };
-  }
+  return sendViaSmtp(report, recipient);
 }

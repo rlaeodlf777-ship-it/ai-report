@@ -17,6 +17,8 @@ interface Report {
     link: string;
     summary: string;
   }[];
+  emailSent?: boolean;
+  emailError?: string;
 }
 
 function formatDate(dateStr: string) {
@@ -235,6 +237,20 @@ export default function Home() {
 
         {report && !loading && (
           <>
+            {report.emailSent && (
+              <div className="mb-6 p-4 rounded-xl border border-[var(--success)]/30 bg-[var(--success)]/10 text-[var(--success)] text-sm animate-fade-in">
+                리포트가 kimddll@naver.com 으로 이메일 발송되었습니다.
+              </div>
+            )}
+            {report.emailSent === false && report.articleCount > 0 && (
+              <div className="mb-6 p-4 rounded-xl border border-yellow-500/30 bg-yellow-500/10 text-yellow-300 text-sm animate-fade-in">
+                <p className="font-medium">이메일 발송 실패</p>
+                <p className="mt-1 text-xs opacity-90">{report.emailError}</p>
+                <p className="mt-2 text-xs opacity-80">
+                  .env.local 파일의 SMTP_PASS에 네이버 앱 비밀번호를 입력한 뒤 서버를 재시작하세요.
+                </p>
+              </div>
+            )}
             {report.articleCount === 0 ? (
               <div className="text-center py-16 animate-fade-in">
                 <p className="text-lg font-medium mb-2">검색 결과가 없습니다</p>
