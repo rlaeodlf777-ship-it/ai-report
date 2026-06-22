@@ -28,22 +28,93 @@ function formatDate(dateStr: string): string {
   });
 }
 
-function buildFallbackReport(keyword: string, articles: NewsArticle[]): NewsReport {
-  const snippets = articles.map((a) => a.snippet).filter(Boolean);
-  const overview =
-    snippets.length > 0
-      ? `최근 7일간 "${keyword}" 관련 뉴스 ${articles.length}건이 수집되었습니다. ` +
-        `주요 보도는 ${articles
-          .slice(0, 3)
-          .map((a) => a.source)
-          .filter((s, i, arr) => arr.indexOf(s) === i)
-          .join(", ")} 등에서 이루어졌습니다.`
-      : `"${keyword}" 관련 최근 7일 이내 뉴스를 찾지 못했습니다.`;
+function cleanTitle(title: string): string {
+  return title.replace(/ - .*$/, "").trim();
+}
 
-  const keyIssues = articles.slice(0, 5).map((a) => {
-    const clean = a.title.replace(/ - .*$/, "").trim();
-    return clean;
+function truncate(text: string, maxLength: number): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength - 3).trim()}...`;
+}
+
+function extractKeyIssues(articles: NewsArticle[]): string[] {
+  const seen = new Set<string>();
+  const issues: string[] = [];
+
+  for (const article of articles) {
+    const clean = cleanTitle(article.title);
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    issues.push(clean);
+    if (issues.length >= 5) break;
+  }
+
+  return issues;
+}
+
+function findArticleForIssue(articles: NewsArticle[], issue: string, index: number) {
+  return articles.find((a) => cleanTitle(a.title) === issue) ?? articles[index];
+}
+
+function isDistinctSnippet(issue: string, snippet: string): boolean {
+  if (snippet.length < 30) return false;
+  const normalizedIssue = issue.replace(/\s+/g, "").toLowerCase();
+  const normalizedSnippet = snippet.replace(/\s+/g, "").toLowerCase();
+  return !normalizedSnippet.startsWith(normalizedIssue.slice(0, Math.min(20, normalizedIssue.length)));
+}
+
+function buildOverviewFromKeyIssues(
+  keyword: string,
+  articles: NewsArticle[],
+  keyIssues: string[]
+): string {
+  if (keyIssues.length === 0) {
+    return `"${keyword}" 관련 최근 7일 이내 뉴스를 찾지 못했습니다.`;
+  }
+
+  const issueDetails = keyIssues.map((issue, index) => {
+    const article = findArticleForIssue(articles, issue, index);
+    const snippet = article?.snippet?.replace(/\s+/g, " ").trim() ?? "";
+    return { issue, snippet };
   });
+
+  const intro = `최근 7일간 "${keyword}" 관련 뉴스 ${articles.length}건을 분석한 결과, ${keyIssues.length}가지 주요 이슈가 확인되었습니다.`;
+
+  const topIssues = issueDetails.slice(0, 3);
+  const issueDescriptions = topIssues.map(({ issue, snippet }) => {
+    if (isDistinctSnippet(issue, snippet)) {
+      return `${issue}은(는) ${truncate(snippet, 80)}`;
+    }
+    return issue;
+  });
+
+  const mainBody =
+    issueDescriptions.length === 1
+      ? `가장 두드러진 이슈는 '${issueDescriptions[0]}'입니다.`
+      : `우선 ${issueDescriptions
+          .map((desc, i) => `${i + 1}) ${desc.includes("은(는)") ? desc : `'${desc}'`}`)
+          .join(", ")} 등이 핵심 이슈로 분류됩니다.`;
+
+  const remainingCount = keyIssues.length - topIssues.length;
+  const extraNote =
+    remainingCount > 0
+      ? ` 추가로 ${issueDetails
+          .slice(3)
+          .map(({ issue }) => `'${issue}'`)
+          .join(", ")} 등 ${remainingCount}건의 관련 동향도 함께 보도되었습니다.`
+      : "";
+
+  const themes = topIssues.map(({ issue }) => issue.split(/[,·…]/)[0]?.trim() || issue);
+  const conclusion = `이들 이슈를 종합하면, "${keyword}" 분야는 ${themes.join(", ")} 등 여러 영역에서 활발한 움직임이 이어지고 있습니다.`;
+
+  return `${intro} ${mainBody}${extraNote} ${conclusion}`;
+}
+
+function buildFallbackReport(keyword: string, articles: NewsArticle[]): NewsReport {
+  const keyIssues = extractKeyIssues(articles);
+  const overview = buildOverviewFromKeyIssues(keyword, articles, keyIssues);
 
   const dateGroups = new Map<string, NewsArticle[]>();
   for (const article of articles) {
@@ -57,7 +128,7 @@ function buildFallbackReport(keyword: string, articles: NewsArticle[]): NewsRepo
     .slice(0, 7)
     .map(([date, items]) => ({
       date,
-      summary: items.map((i) => i.title.replace(/ - .*$/, "")).join(" · "),
+      summary: items.map((i) => cleanTitle(i.title)).join(" · "),
     }));
 
   return {
@@ -69,7 +140,7 @@ function buildFallbackReport(keyword: string, articles: NewsArticle[]): NewsRepo
     keyIssues,
     timeline,
     articles: articles.map((a) => ({
-      title: a.title.replace(/ - .*$/, ""),
+      title: cleanTitle(a.title),
       source: a.source,
       publishedAt: a.publishedAt,
       link: a.link,
@@ -98,8 +169,8 @@ async function buildAiReport(keyword: string, articles: NewsArticle[]): Promise<
         content: `당신은 뉴스 분석 전문가입니다. 주어진 뉴스 기사들을 분석하여 한국어 JSON 리포트를 작성하세요.
 반드시 다음 JSON 형식으로만 응답하세요:
 {
-  "overview": "전체 상황 2-3문장 요약",
   "keyIssues": ["주요 이슈 1", "주요 이슈 2", ...],
+  "overview": "keyIssues에 정리한 주요 이슈들을 종합한 3-4문장 요약. 기사 건수나 출처 나열 없이, 이슈 간 연관성과 전체 흐름을 분석해 서술",
   "timeline": [{"date": "날짜", "summary": "해당일 주요 뉴스 요약"}],
   "articleSummaries": [{"index": 0, "summary": "기사 한 줄 요약"}, ...]
 }`,
@@ -134,7 +205,7 @@ async function buildAiReport(keyword: string, articles: NewsArticle[]): Promise<
     keyIssues: parsed.keyIssues,
     timeline: parsed.timeline,
     articles: articles.map((a, i) => ({
-      title: a.title.replace(/ - .*$/, ""),
+      title: cleanTitle(a.title),
       source: a.source,
       publishedAt: a.publishedAt,
       link: a.link,
